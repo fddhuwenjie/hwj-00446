@@ -128,6 +128,102 @@ function getUserList(room) {
   return users;
 }
 
+function getOperationsBounds(operations) {
+  if (!operations || operations.length === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  
+  for (const op of operations) {
+    const bounds = getOperationBounds(op);
+    if (bounds) {
+      minX = Math.min(minX, bounds.minX);
+      minY = Math.min(minY, bounds.minY);
+      maxX = Math.max(maxX, bounds.maxX);
+      maxY = Math.max(maxY, bounds.maxY);
+    }
+  }
+  
+  if (minX === Infinity) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+function getOperationBounds(op) {
+  switch (op.type) {
+    case 'freehand':
+    case 'eraser':
+      if (!op.points || op.points.length === 0) return null;
+      let fx = Infinity, fy = Infinity, fmaxX = -Infinity, fmaxY = -Infinity;
+      for (const p of op.points) {
+        fx = Math.min(fx, p.x);
+        fy = Math.min(fy, p.y);
+        fmaxX = Math.max(fmaxX, p.x);
+        fmaxY = Math.max(fmaxY, p.y);
+      }
+      return { minX: fx, minY: fy, maxX: fmaxX, maxY: fmaxY };
+    case 'line':
+      return {
+        minX: Math.min(op.x1, op.x2),
+        minY: Math.min(op.y1, op.y2),
+        maxX: Math.max(op.x1, op.x2),
+        maxY: Math.max(op.y1, op.y2)
+      };
+    case 'rect':
+      return {
+        minX: Math.min(op.x, op.x + op.width),
+        minY: Math.min(op.y, op.y + op.height),
+        maxX: Math.max(op.x, op.x + op.width),
+        maxY: Math.max(op.y, op.y + op.height)
+      };
+    case 'circle':
+      return {
+        minX: op.x - op.radius,
+        minY: op.y - op.radius,
+        maxX: op.x + op.radius,
+        maxY: op.y + op.radius
+      };
+    case 'text':
+      return {
+        minX: op.x,
+        minY: op.y,
+        maxX: op.x + (op.text?.length || 0) * 12,
+        maxY: op.y + op.size
+      };
+    default:
+      return null;
+  }
+}
+
+function offsetOperation(op, offsetX, offsetY) {
+  switch (op.type) {
+    case 'freehand':
+    case 'eraser':
+      if (op.points) {
+        for (const p of op.points) {
+          p.x += offsetX;
+          p.y += offsetY;
+        }
+      }
+      break;
+    case 'line':
+      op.x1 += offsetX;
+      op.y1 += offsetY;
+      op.x2 += offsetX;
+      op.y2 += offsetY;
+      break;
+    case 'rect':
+      op.x += offsetX;
+      op.y += offsetY;
+      break;
+    case 'circle':
+      op.x += offsetX;
+      op.y += offsetY;
+      break;
+    case 'text':
+      op.x += offsetX;
+      op.y += offsetY;
+      break;
+  }
+}
+
 function getRandomColor() {
   const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e'];
   return colors[Math.floor(Math.random() * colors.length)];
@@ -418,6 +514,115 @@ wss.on('connection', (ws) => {
             break;
           }
         }
+        break;
+      }
+
+      case 'move_operations': {
+        if (!currentRoom || !userId) return;
+        const room = rooms.get(currentRoom);
+        if (!room || room.isLocked) return;
+
+        const { operationIds, offsetX, offsetY } = data;
+        if (!operationIds || !Array.isArray(operationIds)) return;
+
+        for (const op of room.operations) {
+          if (operationIds.includes(op.timestamp)) {
+            offsetOperation(op, offsetX, offsetY);
+          }
+        }
+        for (const layer of Object.values(room.layers)) {
+          for (const op of layer.operations) {
+            if (operationIds.includes(op.timestamp)) {
+              offsetOperation(op, offsetX, offsetY);
+            }
+          }
+        }
+
+        broadcastToRoom(currentRoom, {
+          type: 'move_operations',
+          operationIds,
+          offsetX,
+          offsetY,
+          userId
+        }, userId);
+        break;
+      }
+
+      case 'delete_operations': {
+        if (!currentRoom || !userId) return;
+        const room = rooms.get(currentRoom);
+        if (!room || room.isLocked) return;
+
+        const { operationIds } = data;
+        if (!operationIds || !Array.isArray(operationIds)) return;
+
+        for (const layer of Object.values(room.layers)) {
+          layer.operations = layer.operations.filter(op => !operationIds.includes(op.timestamp));
+        }
+        room.operations = room.operations.filter(op => !operationIds.includes(op.timestamp));
+
+        broadcastToRoom(currentRoom, {
+          type: 'delete_operations',
+          operationIds,
+          userId
+        }, userId);
+        break;
+      }
+
+      case 'cursor_move': {
+        if (!currentRoom || !userId) return;
+        const room = rooms.get(currentRoom);
+        if (!room) return;
+
+        const user = room.users.get(userId);
+        if (user) {
+          user.cursorX = data.x;
+          user.cursorY = data.y;
+          user.isDrawing = data.isDrawing || false;
+          user.viewportScale = data.scale || 1;
+          user.viewportOffsetX = data.offsetX || 0;
+          user.viewportOffsetY = data.offsetY || 0;
+        }
+
+        broadcastToRoom(currentRoom, {
+          type: 'cursor_move',
+          userId,
+          x: data.x,
+          y: data.y,
+          isDrawing: data.isDrawing || false,
+          scale: data.scale || 1,
+          offsetX: data.offsetX || 0,
+          offsetY: data.offsetY || 0
+        }, userId);
+        break;
+      }
+
+      case 'viewport_sync': {
+        if (!currentRoom || !userId) return;
+        const room = rooms.get(currentRoom);
+        if (!room) return;
+
+        broadcastToRoom(currentRoom, {
+          type: 'viewport_sync',
+          userId,
+          scale: data.scale,
+          offsetX: data.offsetX,
+          offsetY: data.offsetY,
+          targetUserId: data.targetUserId
+        }, userId);
+        break;
+      }
+
+      case 'get_content_bounds': {
+        if (!currentRoom || !userId) return;
+        const room = rooms.get(currentRoom);
+        if (!room) return;
+
+        const bounds = getOperationsBounds(room.operations);
+        ws.send(JSON.stringify({
+          type: 'content_bounds',
+          bounds
+        }));
         break;
       }
     }

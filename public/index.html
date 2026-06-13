@@ -51,6 +51,25 @@
             <button class="tool-btn" data-tool="circle" title="圆形">⭕</button>
             <button class="tool-btn" data-tool="eraser" title="橡皮擦">🧽</button>
             <button class="tool-btn" data-tool="text" title="文字">📝</button>
+            <button class="tool-btn" data-tool="select" title="选区工具">🔲</button>
+          </div>
+        </div>
+
+        <div class="tool-section">
+          <h3>画笔模式</h3>
+          <div class="brush-modes">
+            <button class="brush-mode-btn active" data-brush-mode="normal" title="正常模式">实线</button>
+            <button class="brush-mode-btn" data-brush-mode="dashed" title="虚线模式">虚线</button>
+            <button class="brush-mode-btn" data-brush-mode="highlighter" title="荧光笔模式">荧光</button>
+          </div>
+        </div>
+
+        <div class="tool-section" id="selectionActions" style="display: none;">
+          <h3>选区操作</h3>
+          <div class="selection-actions">
+            <button id="deleteSelectionBtn" class="btn btn-small btn-danger">删除 (Del)</button>
+            <button id="copySelectionBtn" class="btn btn-small btn-primary">复制 (Ctrl+C)</button>
+            <button id="pasteSelectionBtn" class="btn btn-small btn-secondary">粘贴 (Ctrl+V)</button>
           </div>
         </div>
 
@@ -97,12 +116,17 @@
 
       <main class="canvas-container">
         <div class="canvas-wrapper">
-          <canvas id="bgCanvas" class="board-canvas" width="1200" height="800"></canvas>
-          <canvas id="middleCanvas" class="board-canvas" width="1200" height="800"></canvas>
-          <canvas id="fgCanvas" class="board-canvas" width="1200" height="800"></canvas>
-          <canvas id="previewCanvas" class="board-canvas" width="1200" height="800"></canvas>
+          <canvas id="bgCanvas" class="board-canvas"></canvas>
+          <canvas id="middleCanvas" class="board-canvas"></canvas>
+          <canvas id="fgCanvas" class="board-canvas"></canvas>
+          <canvas id="previewCanvas" class="board-canvas"></canvas>
+          <div id="cursorsContainer" class="cursors-container"></div>
           <div id="readonlyOverlay" class="readonly-overlay hidden">
             <span>🔒 画布已锁定</span>
+          </div>
+          <div id="viewportInfo" class="viewport-info">
+            <span id="zoomLevel">100%</span>
+            <span id="coordinates">X: 0, Y: 0</span>
           </div>
         </div>
       </main>
